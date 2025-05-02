@@ -2,10 +2,12 @@ from __future__ import annotations
 
 from collections.abc import Iterable
 from collections.abc import Sequence
+from dataclasses import dataclass
 import os
 from pathlib import Path
 import sys
 from typing import TYPE_CHECKING
+import warnings
 
 import iniconfig
 
@@ -14,6 +16,24 @@ from _pytest.outcomes import fail
 from _pytest.pathlib import absolutepath
 from _pytest.pathlib import commonpath
 from _pytest.pathlib import safe_exists
+from _pytest.warning_types import PytestOmittedConfigWarning
+
+
+@dataclass(frozen=True)
+class Config:
+    root_dirpath: Path
+    ini_filepath: Path
+    config_dict: ConfigDict
+    priority: int
+
+
+CONFIG_PRIORITY = {
+    ".pytest.ini": 5,
+    "pytest.ini": 4,
+    "pyproject.toml": 3,
+    "tox.ini": 2,
+    "setup.cfg": 1,
+}
 
 
 if TYPE_CHECKING:
@@ -36,6 +56,23 @@ def _parse_ini_config(path: Path) -> iniconfig.IniConfig:
         return iniconfig.IniConfig(str(path))
     except iniconfig.ParseError as exc:
         raise UsageError(str(exc)) from exc
+
+
+def _choose_config_and_warn_about_discarded(config_list: list[Config]) -> Config:
+    highest_priority_config = max(config_list, key=lambda c: c.priority)
+    discarded_configs = [
+        c for c in config_list if c.priority != highest_priority_config.priority
+    ]
+
+    for config in discarded_configs:
+        warnings.warn(
+            f"Pytest config found inside {config.ini_filepath.name} is being discarded "
+            f"because a valid config was found in {highest_priority_config.ini_filepath.name}",
+            PytestOmittedConfigWarning,
+            0,
+        )
+
+    return highest_priority_config
 
 
 def load_config_dict_from_file(
@@ -93,19 +130,14 @@ def load_config_dict_from_file(
     return None
 
 
-def locate_config(
+def locate_configs(
     invocation_dir: Path,
     args: Iterable[Path],
-) -> tuple[Path | None, Path | None, ConfigDict]:
+) -> list[Config]:
     """Search in the list of arguments for a valid ini-file for pytest,
     and return a tuple of (rootdir, inifile, cfg-dict)."""
-    config_names = [
-        "pytest.ini",
-        ".pytest.ini",
-        "pyproject.toml",
-        "tox.ini",
-        "setup.cfg",
-    ]
+    valid_config_names = list(CONFIG_PRIORITY.keys())
+    found_valid_configs: list[Config] = []
     args = [x for x in args if not str(x).startswith("-")]
     if not args:
         args = [invocation_dir]
@@ -113,17 +145,27 @@ def locate_config(
     for arg in args:
         argpath = absolutepath(arg)
         for base in (argpath, *argpath.parents):
-            for config_name in config_names:
+            for config_name in valid_config_names:
                 p = base / config_name
                 if p.is_file():
                     if p.name == "pyproject.toml" and found_pyproject_toml is None:
                         found_pyproject_toml = p
                     ini_config = load_config_dict_from_file(p)
                     if ini_config is not None:
-                        return base, p, ini_config
+                        found_valid_configs.append(
+                            Config(
+                                root_dirpath=base,
+                                ini_filepath=p,
+                                config_dict=ini_config,
+                                priority=CONFIG_PRIORITY[p.name],
+                            )
+                        )
+    if found_valid_configs:
+        return found_valid_configs
+
     if found_pyproject_toml is not None:
-        return found_pyproject_toml.parent, found_pyproject_toml, {}
-    return None, None, {}
+        return [Config(found_pyproject_toml.parent, found_pyproject_toml, {}, 0)]
+    return [Config(Path(), Path(), {}, 0)]
 
 
 def get_common_ancestor(
@@ -206,16 +248,28 @@ def determine_setup(
             rootdir = inipath_.parent
     else:
         ancestor = get_common_ancestor(invocation_dir, dirs)
-        rootdir, inipath, inicfg = locate_config(invocation_dir, [ancestor])
-        if rootdir is None and rootdir_cmd_arg is None:
+        configs: list[Config] = locate_configs(invocation_dir, [ancestor])
+        config: Config = _choose_config_and_warn_about_discarded(configs)
+        rootdir, inipath, inicfg = (
+            config.root_dirpath,
+            config.ini_filepath,
+            config.config_dict,
+        )
+        if not rootdir.is_dir() and rootdir_cmd_arg is None:
             for possible_rootdir in (ancestor, *ancestor.parents):
                 if (possible_rootdir / "setup.py").is_file():
                     rootdir = possible_rootdir
                     break
             else:
                 if dirs != [ancestor]:
-                    rootdir, inipath, inicfg = locate_config(invocation_dir, dirs)
-                if rootdir is None:
+                    cfgs: list[Config] = locate_configs(invocation_dir, dirs)
+                    cfg: Config = _choose_config_and_warn_about_discarded(cfgs)
+                    rootdir, inipath, inicfg = (
+                        cfg.root_dirpath,
+                        cfg.ini_filepath,
+                        cfg.config_dict,
+                    )
+                if not rootdir.is_dir():
                     rootdir = get_common_ancestor(
                         invocation_dir, [invocation_dir, ancestor]
                     )

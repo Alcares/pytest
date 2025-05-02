@@ -82,6 +82,13 @@ class PytestUnknownMarkWarning(PytestWarning):
 
 
 @final
+class PytestOmittedConfigWarning(PytestWarning):
+    """Warning issued when multiple valid config files were detected (only settings from one can be applied)"""
+
+    __module__ = "pytest"
+
+
+@final
 class PytestUnraisableExceptionWarning(PytestWarning):
     """An unraisable exception was reported.
 
