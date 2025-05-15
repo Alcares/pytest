@@ -26,8 +26,11 @@ class Config:
     config_dict: ConfigDict
     priority: int
 
+    def to_tuple(self) -> tuple[Path, Path, ConfigDict]:
+        return self.root_dirpath, self.ini_filepath, self.config_dict
 
-CONFIG_PRIORITY = {
+
+CONFIG_RELATIVE_PRIORITY = {
     ".pytest.ini": 5,
     "pytest.ini": 4,
     "pyproject.toml": 3,
@@ -59,18 +62,38 @@ def _parse_ini_config(path: Path) -> iniconfig.IniConfig:
 
 
 def _choose_config_and_warn_about_discarded(config_list: list[Config]) -> Config:
+    """Returns Config with the highest priority, issues a warning about the discarded configs."""
     highest_priority_config = max(config_list, key=lambda c: c.priority)
     discarded_configs = [
         c for c in config_list if c.priority != highest_priority_config.priority
     ]
+    import inspect as isp
+
+    for entry in isp.stack():
+        print(entry.filename, entry.lineno, entry.function)
 
     for config in discarded_configs:
-        warnings.warn(
-            f"Pytest config found inside {config.ini_filepath.name} is being discarded "
-            f"because a valid config was found in {highest_priority_config.ini_filepath.name}",
-            PytestOmittedConfigWarning,
-            0,
+        warning = PytestOmittedConfigWarning(
+            f"Pytest configuration found inside {config.ini_filepath.name} is being discarded "
+            f"because valid configuration was found in {highest_priority_config.ini_filepath.name}",
         )
+        warnings.warn(warning, stacklevel=1)
+
+        # pprint.pprint(inspect.stack())
+        #
+        # with warnings.catch_warnings(record=True) as records:
+        #     warnings.simplefilter("always", type(warning))
+        #     warnings.warn(warning, stacklevel=3)
+
+        # warnings.warn(
+        #     PytestWarning(f"(rm_rf) error removing")
+        # )
+        # warnings.warn_explicit(
+        #     message="lol",
+        #     category=PytestOmittedConfigWarning,
+        #     filename="",
+        #     lineno=123
+        # )
 
     return highest_priority_config
 
@@ -136,7 +159,7 @@ def locate_configs(
 ) -> list[Config]:
     """Search in the list of arguments for a valid ini-file for pytest,
     and return a tuple of (rootdir, inifile, cfg-dict)."""
-    valid_config_names = list(CONFIG_PRIORITY.keys())
+    valid_config_names = list(CONFIG_RELATIVE_PRIORITY.keys())
     found_valid_configs: list[Config] = []
     args = [x for x in args if not str(x).startswith("-")]
     if not args:
@@ -157,7 +180,7 @@ def locate_configs(
                                 root_dirpath=base,
                                 ini_filepath=p,
                                 config_dict=ini_config,
-                                priority=CONFIG_PRIORITY[p.name],
+                                priority=CONFIG_RELATIVE_PRIORITY[p.name],
                             )
                         )
     if found_valid_configs:
@@ -250,11 +273,7 @@ def determine_setup(
         ancestor = get_common_ancestor(invocation_dir, dirs)
         configs: list[Config] = locate_configs(invocation_dir, [ancestor])
         config: Config = _choose_config_and_warn_about_discarded(configs)
-        rootdir, inipath, inicfg = (
-            config.root_dirpath,
-            config.ini_filepath,
-            config.config_dict,
-        )
+        rootdir, inipath, inicfg = config.to_tuple()
         if not rootdir.is_dir() and rootdir_cmd_arg is None:
             for possible_rootdir in (ancestor, *ancestor.parents):
                 if (possible_rootdir / "setup.py").is_file():
@@ -264,11 +283,7 @@ def determine_setup(
                 if dirs != [ancestor]:
                     cfgs: list[Config] = locate_configs(invocation_dir, dirs)
                     cfg: Config = _choose_config_and_warn_about_discarded(cfgs)
-                    rootdir, inipath, inicfg = (
-                        cfg.root_dirpath,
-                        cfg.ini_filepath,
-                        cfg.config_dict,
-                    )
+                    rootdir, inipath, inicfg = cfg.to_tuple()
                 if not rootdir.is_dir():
                     rootdir = get_common_ancestor(
                         invocation_dir, [invocation_dir, ancestor]

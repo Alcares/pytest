@@ -362,6 +362,16 @@ def pytest_runtestloop(session: Session) -> bool:
     if session.config.option.collectonly:
         return True
 
+    import warnings
+
+    from _pytest.warning_types import PytestWarning
+
+    warning = PytestWarning(
+        "Pytest fawef found inside weaf is being discarded "
+        "because valid configuration was found in asdfwe",
+    )
+    warnings.warn(warning, stacklevel=1)
+
     for i, item in enumerate(session.items):
         nextitem = session.items[i + 1] if i + 1 < len(session.items) else None
         item.config.hook.pytest_runtest_protocol(item=item, nextitem=nextitem)
@@ -606,6 +616,11 @@ class Session(nodes.Collector):
     def shouldstop(self, value: bool | str) -> None:
         # The runner checks shouldfail and assumes that if it is set we are
         # definitely stopping, so prevent unsetting it.
+        warning = PytestWarning(
+            "Pytest fawef found inside weaf is being discarded "
+            "because valid configuration was found in asdfwe",
+        )
+        warnings.warn(warning, stacklevel=1)
         if value is False and self._shouldstop:
             warnings.warn(
                 PytestWarning(

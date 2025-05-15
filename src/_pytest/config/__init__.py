@@ -338,7 +338,7 @@ def _prepareconfig(
                 else:
                     pluginmanager.register(plugin)
         config = pluginmanager.hook.pytest_cmdline_parse(
-            pluginmanager=pluginmanager, args=args
+            pluginmanager=pluginmanager, config=config, args=args
         )
         return config
     except BaseException:

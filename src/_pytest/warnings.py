@@ -110,6 +110,26 @@ def pytest_terminal_summary(
         return (yield)
 
 
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_runtestloop(session: Session) -> Generator[None]:
+    config = session.config
+    with catch_warnings_for_item(
+        config=config, ihook=config.hook, when="config", item=None
+    ):
+        return (yield)
+
+
+@pytest.hookimpl(wrapper=True, tryfirst=True)
+def pytest_cmdline_parse(
+    pluginmanager,
+    config,
+) -> Generator[None]:
+    with catch_warnings_for_item(
+        config=config, ihook=config.hook, when="config", item=None
+    ):
+        return (yield)
+
+
 @pytest.hookimpl(wrapper=True)
 def pytest_sessionfinish(session: Session) -> Generator[None]:
     config = session.config

@@ -163,7 +163,7 @@ def pytest_configure(config: Config) -> None:
 
 @hookspec(firstresult=True)
 def pytest_cmdline_parse(
-    pluginmanager: PytestPluginManager, args: list[str]
+    pluginmanager: PytestPluginManager, config: Config, args: list[str]
 ) -> Config | None:
     """Return an initialized :class:`~pytest.Config`, parsing the specified args.
 

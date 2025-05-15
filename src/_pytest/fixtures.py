@@ -1157,7 +1157,10 @@ def pytest_fixture_setup(
         fixturefunc
     ):
         auto_str = " with autouse=True" if fixturedef._autouse else ""
+        import inspect as isp
 
+        for entry in isp.stack():
+            print(entry.filename, entry.lineno, entry.function)
         warnings.warn(
             PytestRemovedIn9Warning(
                 f"{request.node.name!r} requested an async fixture "
